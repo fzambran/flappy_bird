@@ -26,7 +26,7 @@ El código y la guía se distribuyen bajo [licencia MIT](LICENSE), que permite m
 ## Jugar
 
 1. Pulsa **Conectar micrófono** y concede el permiso.
-2. Guarda silencio dos segundos, sostiene un tono grave cómodo tres segundos y uno agudo cómodo tres segundos. Necesitas al menos cinco semitonos de diferencia; no fuerces la voz.
+2. Guarda silencio dos segundos, pulsa Empezar tono grave y después Empezar tono agudo. Cada etapa ofrece dos segundos de preparación y acumula al menos dos segundos de voz reconocida, sin límite de tiempo. El indicador confirma el tono y muestra el progreso; las pausas para respirar no cuentan. Necesitas al menos cinco semitonos de diferencia; no fuerces la voz.
 3. Practica tarareando: grave baja, agudo sube. En silencio se conserva la altura objetivo. Cambiar volumen no controla la altura.
 4. Comienza la partida. Superar un obstáculo suma un punto. Usa Pausar para descansar y Recalibrar para cambiar el rango.
 

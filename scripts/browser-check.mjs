@@ -16,7 +16,7 @@ buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34);
 buffer.write('data', 36); buffer.writeUInt32LE(buffer.length - 44, 40);
 for (let i = 0; i < rate * seconds; i++) {
   const t = i / rate;
-  const hz = t < 2 ? 0 : t < 5 ? 100 : t < 8 ? 200 : Math.sqrt(20000);
+  const hz = t < 2 ? 0 : t < 12 ? 100 : t < 20 ? 200 : Math.sqrt(20000);
   buffer.writeInt16LE(hz ? Math.round(Math.sin(2 * Math.PI * hz * t) * 6000) : 0, 44 + i * 2);
 }
 fs.writeFileSync(wavPath, buffer);
@@ -56,9 +56,18 @@ try {
   });
   await page.goto(baseUrl);
   await click(page, 'Conectar micrófono');
+  await heading(page, 'Vamos con el tono grave');
+  await page.waitForTimeout(4000);
+  await heading(page, 'Vamos con el tono grave');
+  await click(page, 'Empezar tono grave');
+  await page.getByText(/Tono grave reconocido/).waitFor();
+  await page.screenshot({ path: path.join(os.tmpdir(), 'vuelo-calibration.png'), fullPage: true });
+  await heading(page, 'Tono grave registrado');
+  await click(page, 'Empezar tono agudo');
+  await page.getByText(/Tono agudo reconocido/).waitFor();
   await heading(page, 'Tu rango está listo');
   assert.match(await page.locator('#message').textContent(), /100–200 Hz/);
-  await click(page, 'Practicar'); await page.waitForTimeout(600);
+  await click(page, 'Practicar'); await page.waitForFunction(() => Math.abs(parseFloat(document.querySelector('#pitch').textContent) - 141) < 3);
   const pitch = parseFloat(await page.locator('#pitch').textContent());
   assert.ok(Number.isFinite(pitch) && Math.abs(pitch - 141) < 3, 'Detected pitch must be about 141 Hz');
   const level = parseFloat(await page.locator('#level').textContent());

@@ -11,7 +11,7 @@ La primera versión incluirá calibración, práctica libre, obstáculos, colisi
 ## Diseño del control y arquitectura
 
 - **Entrada vocal:** comenzar con vocales sostenidas o tarareo. Detectar la frecuencia fundamental; el volumen servirá únicamente para distinguir señal y silencio. No se requiere reconocimiento de palabras.
-- **Calibración:** medir dos segundos de ruido ambiente y luego tres segundos de un tono grave cómodo y tres de uno agudo cómodo. Usar muestras fiables y sus medianas. Si el rango es menor de cinco semitonos o faltan muestras, explicar el problema y permitir repetir.
+- **Calibración:** medir dos segundos de ruido ambiente y luego al menos dos segundos de voz válida por tono grave/agudo. Cada tono empieza mediante un botón y una preparación de dos segundos, sin límite de espera ni de captura. Mostrar reconocimiento y progreso; no contar silencios. Usar muestras fiables y sus medianas. Si el rango es menor de cinco semitonos o faltan muestras, explicar el problema y permitir repetir.
 - **Conversión a altura:** normalizar el tono en escala logarítmica entre los extremos calibrados. Mapear el grave al límite inferior y el agudo al superior, reservando márgenes para el tamaño del pájaro. Limitar los tonos fuera del rango a esos extremos.
 - **Estabilidad:** aplicar una mediana de cinco lecturas válidas y una aproximación gradual a la altura objetivo, inicialmente con una constante de 120 ms. Descartar lecturas poco fiables; conservar el último objetivo durante silencio o señal inválida.
 - **Juego:** mantener fija la posición horizontal del pájaro y desplazar los obstáculos hacia la izquierda. El control vertical será directo, sin gravedad ni impulsos.

@@ -1,12 +1,13 @@
 import './style.css';
 import { Microphone } from './audio/microphone';
 import type { PitchReading } from './audio/yin';
-import { calibrate, median, VoiceControl, type Calibration } from './control';
+import { VoiceControl, type Calibration } from './control';
+import { CalibrationSession, CALIBRATION_SECONDS, type CalibrationStage } from './calibration';
 import { Game, WORLD } from './game';
 
 type Mode = 'inicio' | 'calibración' | 'práctica' | 'partida' | 'fin';
 const app = document.querySelector<HTMLDivElement>('#app')!;
-app.innerHTML = `<main><header><a class="brand" href="./">◉ VUELO VOCAL</a><span class="tag">Un pequeño juego para tu voz</span></header><section class="intro"><div><p class="eyebrow">EL TONO MARCA EL CAMINO</p><h1>Encuentra tu vuelo.</h1><p>Tararea grave para bajar y agudo para subir.<br>Respira cuando quieras: tu altura se mantiene.</p></div><div class="steps"><span>01 · Conecta</span><span>02 · Calibra</span><span>03 · Vuela</span></div></section><section class="play"><div class="topbar"><span id="mode">Preparado para despegar</span><div><span id="time">00:00</span><strong id="score">0 puntos</strong></div></div><div class="stage"><canvas width="960" height="540" aria-label="Juego de vuelo controlado por tono de voz"></canvas><div id="overlay" class="overlay"><div><p class="eyebrow" id="overlay-label">TU VOZ, TUS ALAS</p><h2 id="title">Un vuelo diferente</h2><p id="message">Conecta tu micrófono y encuentra un rango cómodo.<br>No hace falta cantar fuerte.</p><div id="actions"></div></div></div></div><div class="telemetry"><div><small>TONO</small><strong id="pitch">— Hz</strong></div><div><small>SEÑAL</small><strong id="signal">Sin micrófono</strong><span id="level" class="level">— dBFS</span></div><div><small>CONFIANZA</small><strong id="confidence">—</strong></div><div class="meter"><small>ALTURA OBJETIVO</small><progress id="height" max="1" value="0.5"></progress></div></div></section><div class="toolbar" id="toolbar"></div><p class="footnote">Audio procesado en tu navegador · Sin grabaciones · Usa un tono sostenido o tarareo</p></main>`;
+app.innerHTML = `<main><header><a class="brand" href="./">◉ VUELO VOCAL</a><span class="tag">Un pequeño juego para tu voz</span></header><section class="intro"><div><p class="eyebrow">EL TONO MARCA EL CAMINO</p><h1>Encuentra tu vuelo.</h1><p>Tararea grave para bajar y agudo para subir.<br>Respira cuando quieras: tu altura se mantiene.</p></div><div class="steps"><span>01 · Conecta</span><span>02 · Calibra</span><span>03 · Vuela</span></div></section><section class="play"><div class="topbar"><span id="mode">Preparado para despegar</span><div><span id="time">00:00</span><strong id="score">0 puntos</strong></div></div><div class="stage"><canvas width="960" height="540" aria-label="Juego de vuelo controlado por tono de voz"></canvas><div id="overlay" class="overlay"><div><p class="eyebrow" id="overlay-label">TU VOZ, TUS ALAS</p><h2 id="title">Un vuelo diferente</h2><p id="message">Conecta tu micrófono y encuentra un rango cómodo.<br>No hace falta cantar fuerte.</p><div id="calibration-feedback" hidden><p id="tone-status" role="status"></p><progress id="calibration-progress" max="2" value="0" aria-label="Segundos de tono reconocido"></progress><p id="capture-time"></p></div><div id="actions"></div></div></div></div><div class="telemetry"><div><small>TONO</small><strong id="pitch">— Hz</strong></div><div><small>SEÑAL</small><strong id="signal">Sin micrófono</strong><span id="level" class="level">— dBFS</span></div><div><small>CONFIANZA</small><strong id="confidence">—</strong></div><div class="meter"><small>ALTURA OBJETIVO</small><progress id="height" max="1" value="0.5"></progress></div></div></section><div class="toolbar" id="toolbar"></div><p class="footnote">Audio procesado en tu navegador · Sin grabaciones · Usa un tono sostenido o tarareo</p></main>`;
 const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = document.querySelector('canvas')!;
 const ctx = canvas.getContext('2d')!;
@@ -16,16 +17,15 @@ const game = new Game();
 let mode: Mode = 'inicio', paused = false, connected = false, busy = false;
 let calibration: Calibration | undefined;
 let latest: PitchReading = { frequencyHz: null, confidence: 0, rms: 0, timestamp: 0 };
-let noise: number[] = [], low: number[] = [], high: number[] = [];
-let phase = 0, phaseStart = 0, validAt = 0;
+let calibrationSession = new CalibrationSession(performance.now());
+let displayedStage: CalibrationStage | undefined;
+let validAt = 0;
 let devHeight: number | null = null;
-const durations = [2, 3, 3];
-const phaseTitles = ['Escucha del ambiente', 'Tu tono grave cómodo', 'Tu tono agudo cómodo'];
-const phaseHints = ['Guarda silencio durante dos segundos.', 'Sostén un tono grave durante tres segundos, sin forzarlo.', 'Sostén un tono agudo durante tres segundos, sin forzarlo.'];
 function button(label: string, action: () => void | Promise<void>, secondary = false) {
   const b = document.createElement('button'); b.textContent = label; b.className = secondary ? 'secondary' : ''; b.onclick = () => { void action(); }; return b;
 }
 function show(title: string, message: string, buttons: HTMLButtonElement[] = []) {
+  element('calibration-feedback').hidden = true;
   element('overlay').hidden = false; element('title').textContent = title; element('message').textContent = message;
   element('actions').replaceChildren(...buttons);
 }
@@ -50,8 +50,7 @@ function read(reading: PitchReading) {
   latest = reading;
   if (paused) return;
   if (mode === 'calibración') {
-    if (phase === 0) noise.push(reading.rms);
-    else if (reading.frequencyHz !== null && reading.confidence >= 0.85 && reading.rms >= Math.max(0.003, median(noise) * 3)) (phase === 1 ? low : high).push(reading.frequencyHz);
+    if (calibrationSession.ingest(reading)) validAt = performance.now();
   } else if (calibration && control.ingest(reading, calibration)) validAt = performance.now();
 }
 function errorText(error: unknown) {
@@ -88,12 +87,37 @@ async function disconnect() {
 }
 function beginCalibration() {
   if (!connected) return;
-  paused = false; mode = 'calibración'; phase = 0; phaseStart = performance.now(); noise = []; low = []; high = []; devHeight = null; toolbar();
-  show(phaseTitles[0], phaseHints[0]);
+  paused = false; mode = 'calibración'; calibrationSession = new CalibrationSession(performance.now()); displayedStage = undefined; devHeight = null; toolbar();
+  renderCalibration(performance.now());
+}
+function renderCalibration(now: number) {
+  const session = calibrationSession;
+  const stage = session.stage;
+  if (displayedStage !== stage) {
+    displayedStage = stage;
+    if (stage === 'noise') show('Escucha del ambiente', 'Guarda silencio mientras medimos el ruido del micrófono.');
+    else if (stage === 'ready-low') show('Vamos con el tono grave', 'Tómate tu tiempo. Pulsa el botón cuando estés listo para tararear un tono grave cómodo.', [button('Empezar tono grave', () => session.startTone(performance.now()))]);
+    else if (stage === 'ready-high') show('Tono grave registrado', `${Math.round(session.lowHz)} Hz. Ahora prepara un tono más agudo. Pulsa el botón cuando estés listo.`, [button('Empezar tono agudo', () => session.startTone(performance.now()))]);
+    else if (stage === 'prepare-low' || stage === 'prepare-high') show('Prepárate', 'Tendrás dos segundos para prepararte. Después empieza a tararear, sin forzar la voz.');
+    else if (stage === 'low' || stage === 'high') {
+      show(stage === 'low' ? 'Tu tono grave cómodo' : 'Tu tono agudo cómodo', 'Acumularemos al menos dos segundos de tono reconocido. Puedes respirar: no hay límite de tiempo.', [button('Volver a empezar', beginCalibration, true)]);
+      element('calibration-feedback').hidden = false;
+    }
+  }
+  if (stage === 'noise') element('title').textContent = session.remaining(now) > 0 ? `Escucha del ambiente · ${Math.ceil(session.remaining(now))} s` : 'Esperando señal del micrófono…';
+  else if (stage === 'prepare-low' || stage === 'prepare-high') element('title').textContent = `Prepárate para el tono ${stage === 'prepare-low' ? 'grave' : 'agudo'} · ${Math.ceil(session.remaining(now))} s`;
+  else if (stage === 'low' || stage === 'high') {
+    const tone = stage === 'low' ? 'grave' : 'agudo';
+    const feedback = session.feedback;
+    element('tone-status').textContent = feedback === 'recognized' ? `Tono ${tone} reconocido · ${Math.round(session.frequencyHz!)} Hz` : feedback === 'too-low' ? 'Este tono todavía es demasiado grave. Prueba uno más agudo, sin forzarte.' : feedback === 'unstable' ? 'Escucho sonido, pero no un tono estable. Prueba un tarareo o una vocal sostenida.' : feedback === 'quiet' ? 'Esperando tu voz… Acércate al micrófono si estás tarareando.' : `Esperando un tono ${tone}…`;
+    element('tone-status').dataset.recognized = String(feedback === 'recognized');
+    element<HTMLProgressElement>('calibration-progress').value = session.validSeconds;
+    element('capture-time').textContent = `${session.validSeconds.toFixed(1)} / ${CALIBRATION_SECONDS.toFixed(1)} s de tono reconocido`;
+  }
 }
 function finishCalibration() {
   try {
-    calibration = calibrate(noise, low, high); control.reset(); mode = 'práctica'; game.reset(); toolbar();
+    calibration = calibrationSession.result(); control.reset(); mode = 'práctica'; game.reset(); toolbar();
     show('Tu rango está listo', `${Math.round(calibration.lowHz)}–${Math.round(calibration.highHz)} Hz. Prueba subir y bajar antes de jugar.`, [button('Practicar', hide)]);
   } catch (error) { paused = true; show('Repitamos la calibración', errorText(error), [button('Repetir', beginCalibration)]); }
 }
@@ -140,9 +164,9 @@ function frame(now: number) {
   const dt = Math.min((now-previous)/1000,0.05); previous=now;
   if (!paused) {
     if (mode === 'calibración') {
-      const remaining = Math.max(0,durations[phase]-(now-phaseStart)/1000);
-      element('title').textContent = `${phaseTitles[phase]} · ${Math.ceil(remaining)} s`;
-      if (remaining === 0) { phase++; phaseStart=now; if(phase === 3) finishCalibration(); else show(phaseTitles[phase],phaseHints[phase]); }
+      calibrationSession.tick(now);
+      if (calibrationSession.stage === 'complete') finishCalibration();
+      else renderCalibration(now);
     }
     if (mode === 'práctica' || mode === 'partida') {
       if (devHeight !== null) control.target = devHeight;
